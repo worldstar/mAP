@@ -44,10 +44,11 @@ if args.set_class_iou is not None:
 # make sure that the cwd() is the location of the python script (so that every path makes sense)
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-GT_PATH = os.path.join(os.getcwd(), 'input', 'ground-truth')
-DR_PATH = os.path.join(os.getcwd(), 'input', 'detection-results')
+GT_PATH = sys.argv[1] #'./content/test/labels' #os.path.join(os.getcwd(), 'content', 'test','labels')
+DR_PATH = sys.argv[2] #'./content/ScaledYOLOv4/inference/output' #os.path.join(os.getcwd(), 'content', 'ScaledYOLOv4','inference','output')
 # if there are no images then no animation can be shown
-IMG_PATH = os.path.join(os.getcwd(), 'input', 'images-optional')
+IMG_PATH = sys.argv[3] #'./content/ScaledYOLOv4/inference/output'#os.path.join(os.getcwd(), 'content', 'ScaledYOLOv4','inference','output')
+
 if os.path.exists(IMG_PATH): 
     for dirpath, dirnames, files in os.walk(IMG_PATH):
         if not files:
@@ -477,19 +478,23 @@ for class_index, class_name in enumerate(gt_classes):
         lines = file_lines_to_list(txt_file)
         for line in lines:
             try:
-                tmp_class_name, confidence, left, top, right, bottom = line.split()
+                # tmp_class_name, confidence, left, top, right, bottom = line.split()
+                tmp_class_name, left, top, right, bottom = line.split()
             except ValueError:
                 error_msg = "Error: File " + txt_file + " in the wrong format.\n"
-                error_msg += " Expected: <class_name> <confidence> <left> <top> <right> <bottom>\n"
+                # error_msg += " Expected: <class_name> <confidence> <left> <top> <right> <bottom>\n"
+                error_msg += " Expected: <class_name> <left> <top> <right> <bottom>\n"
                 error_msg += " Received: " + line
                 error(error_msg)
             if tmp_class_name == class_name:
                 #print("match")
                 bbox = left + " " + top + " " + right + " " +bottom
-                bounding_boxes.append({"confidence":confidence, "file_id":file_id, "bbox":bbox})
+                bounding_boxes.append({"file_id":file_id, "bbox":bbox})
+                # bounding_boxes.append({"confidence":confidence, "file_id":file_id, "bbox":bbox})
                 #print(bounding_boxes)
     # sort detection-results by decreasing confidence
-    bounding_boxes.sort(key=lambda x:float(x['confidence']), reverse=True)
+    # bounding_boxes.sort(key=lambda x:float(x['confidence']), reverse=True)
+
     with open(TEMP_FILES_PATH + "/" + class_name + "_dr.json", 'w') as outfile:
         json.dump(bounding_boxes, outfile)
 
@@ -521,7 +526,8 @@ with open(output_files_path + "/output.txt", 'w') as output_file:
             file_id = detection["file_id"]
             if show_animation:
                 # find ground truth image
-                ground_truth_img = glob.glob1(IMG_PATH, file_id + ".*")
+                ground_truth_img = glob.glob1(IMG_PATH, file_id + ".jpg")
+                print(IMG_PATH,file_id)
                 #tifCounter = len(glob.glob1(myPath,"*.tif"))
                 if len(ground_truth_img) == 0:
                     error("Error. Image not found with id: " + file_id)
@@ -625,7 +631,8 @@ with open(output_files_path + "/output.txt", 'w') as output_file:
                 # 2nd line
                 v_pos += int(bottom_border / 2.0)
                 rank_pos = str(idx+1) # rank position (idx starts at 0)
-                text = "Detection #rank: " + rank_pos + " confidence: {0:.2f}% ".format(float(detection["confidence"])*100)
+                # text = "Detection #rank: " + rank_pos + " confidence: {0:.2f}% ".format(float(detection["confidence"])*100)
+                text = "Detection #rank: " + rank_pos 
                 img, line_width = draw_text_in_image(img, text, (margin, v_pos), white, 0)
                 color = light_red
                 if status == "MATCH!":
