@@ -15,6 +15,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-na', '--no-animation', help="no animation is shown.", action="store_true")
 parser.add_argument('-np', '--no-plot', help="no plot is shown.", action="store_true")
 parser.add_argument('-q', '--quiet', help="minimalistic console output.", action="store_true")
+parser.add_argument('-GT_PATH',type	=str)
+parser.add_argument('-DR_PATH',type	=str)
+parser.add_argument('-IMG_PATH',type = str)
+
 # argparse receiving list of classes to be ignored (e.g., python main.py --ignore person book)
 parser.add_argument('-i', '--ignore', nargs='+', type=str, help="ignore a list of classes.")
 # argparse receiving list of classes with specific IoU (e.g., python main.py --set-class-iou person 0.7)
@@ -44,10 +48,9 @@ if args.set_class_iou is not None:
 # make sure that the cwd() is the location of the python script (so that every path makes sense)
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-GT_PATH = sys.argv[1] #'./content/test/labels' #os.path.join(os.getcwd(), 'content', 'test','labels')
-DR_PATH = sys.argv[2] #'./content/ScaledYOLOv4/inference/output' #os.path.join(os.getcwd(), 'content', 'ScaledYOLOv4','inference','output')
-# if there are no images then no animation can be shown
-IMG_PATH = sys.argv[3] #'./content/ScaledYOLOv4/inference/output'#os.path.join(os.getcwd(), 'content', 'ScaledYOLOv4','inference','output')
+GT_PATH  = args.GT_PATH #'./content/test/labels' #os.path.join(os.getcwd(), 'content', 'test','labels')
+DR_PATH  = args.DR_PATH #'./content/ScaledYOLOv4/inference/output' #os.path.join(os.getcwd(), 'content', 'ScaledYOLOv4','inference','output')
+IMG_PATH = args.IMG_PATH #'./content/ScaledYOLOv4/inference/output'#os.path.join(os.getcwd(), 'content', 'ScaledYOLOv4','inference','output')
 
 if os.path.exists(IMG_PATH): 
     for dirpath, dirnames, files in os.walk(IMG_PATH):
@@ -326,10 +329,10 @@ def draw_plot_func(dictionary, n_classes, window_title, plot_title, x_label, out
     # save the plot
     fig.savefig(output_path)
     # show image
-    if to_show:
-        plt.show()
-    # close the plot
-    plt.close()
+    # if to_show:
+    #     plt.show()
+    # # close the plot
+    # plt.close()
 
 """
  Create a ".temp_files/" and "output/" directory
@@ -651,8 +654,8 @@ with open(output_files_path + "/output.txt", 'w') as output_file:
                 cv2.rectangle(img_cumulative,(bb[0],bb[1]),(bb[2],bb[3]),color,2)
                 cv2.putText(img_cumulative, class_name, (bb[0],bb[1] - 5), font, 0.6, color, 1, cv2.LINE_AA)
                 # show image
-                cv2.imshow("Animation", img)
-                cv2.waitKey(20) # show for 20 ms
+                # cv2.imshow("Animation", img)
+                # cv2.waitKey(20) # show for 20 ms
                 # save image to output
                 output_img_path = output_files_path + "/images/detections_one_by_one/" + class_name + "_detection" + str(idx) + ".jpg"
                 cv2.imwrite(output_img_path, img)

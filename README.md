@@ -9,5 +9,5 @@
 範例: 
 python main.py "./content/test/labels" "./content/ScaledYOLOv4/inference/output" "./content/ScaledYOLOv4/inference/output"
 自定義:
-python main.py <GT_PATH> <DR_PATH> <IMG_PATH>
+python main.py -GT_PATH <GT_PATH> -DR_PATH <DR_PATH> -IMG_PATH <IMG_PATH>
 ```
