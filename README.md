@@ -1,4 +1,12 @@
-# mAP使用說明
+# 在Google Colab上運行mAP使用說明
+```
+!git clone https://github.com/Cartucho/mAP
+%cd mAP
+# 上傳原始標記至ground-truth，預測結果至detection-results
+!python main.py --no-animation --no-plot
+```
+
+# Roboflow預測結果計算mAP使用說明
 
 1. main 參數說明
 - GT_PATH   ground-truth      路徑 ex: "./content/test/labels"
