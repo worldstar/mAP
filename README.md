@@ -2,7 +2,7 @@
 ```
 !git clone https://github.com/Cartucho/mAP
 %cd mAP
-# 上傳原始標記至ground-truth，預測結果至detection-results
+# 上傳原始標記至input/ground-truth，預測結果至input/detection-results
 !python main.py --no-animation --no-plot
 ```
 
