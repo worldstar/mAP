@@ -7,8 +7,8 @@
 ```
 
 # Roboflow預測結果計算mAP使用說明
-
-1. main 參數說明
+因為Roboflow並沒有輸出confidence資訊，因此要刪除相關的confidence內容。
+<!-- 1. main 參數說明
 - GT_PATH   ground-truth      路徑 ex: "./content/test/labels"
 - DR_PATH   detection-results 路徑 ex: "./content/ScaledYOLOv4/inference/output"
 - IMG_PATH                圖片路徑 ex: "./content/ScaledYOLOv4/inference/output"             
@@ -19,3 +19,4 @@ python main.py "./content/test/labels" "./content/ScaledYOLOv4/inference/output"
 自定義:
 python main.py -GT_PATH <GT_PATH> -DR_PATH <DR_PATH> -IMG_PATH <IMG_PATH>
 ```
+ -->
