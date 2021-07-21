@@ -437,7 +437,7 @@ def draw_plot_func(dictionary, n_classes, window_title, plot_title, x_label, out
 TEMP_FILES_PATH = ".temp_files"
 if not os.path.exists(TEMP_FILES_PATH): # if it doesn't exist already
     os.makedirs(TEMP_FILES_PATH)
-results_files_path =  os.path.join(os.getcwd(),"results/")
+results_files_path =  os.path.join(os.getcwd(),"result/")
 if os.path.exists(results_files_path): # if it exist already
     # reset the results directory
     shutil.rmtree(results_files_path)

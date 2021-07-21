@@ -2,8 +2,19 @@
 ```
 !git clone https://github.com/Cartucho/mAP
 %cd mAP
-# 上傳原始標記至input/ground-truth，預測結果至input/detection-results
-!python main.py --no-animation 
+# 上傳原始標記至input/ground-truth，預測結果至input/detection-results , 預測圖片至input/images-optional
+!python main.py 
+```
+
+# 指令說明
+```
+--no-animation --> 不產生images資料夾
+--no-plot      --> 不產生classes資料夾、detection-results-info.png、ground-truth-info.png、lamr.png、mAP.png 
+```
+# 參數說明
+```
+plt.yticks -> fontsize y軸字樣大小
+plt.xticks -> fontsize x軸字樣大小
 ```
 
 # Roboflow預測結果計算mAP使用說明
