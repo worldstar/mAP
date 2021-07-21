@@ -1,4 +1,4 @@
-import glob
+import glob 
 import json
 import os
 import shutil
@@ -6,23 +6,32 @@ import operator
 import sys
 import argparse
 import math
+import cv2
+import time
 
+from sklearn.metrics import confusion_matrix
 import numpy as np
 
+# python test.py --weights ../runs/train/20210121_ep500_vsdv1/weights/last.pt --data dataVSD.yaml --img 416
+
 MINOVERLAP = 0.5 # default value (defined in the PASCAL VOC2012 challenge)
+precision_average = 0
+recall_average = 0 
+# log_dir         = sys.argv[1]#'logs/20200421_Y&D_Adam&1e-4_focalloss&gamma=2.^alpha=.25/'
+# filename        = sys.argv[2]
+# pltshow         = sys.argv[3]#"On","Off"
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-na', '--no-animation', help="no animation is shown.", action="store_true")
 parser.add_argument('-np', '--no-plot', help="no plot is shown.", action="store_true")
 parser.add_argument('-q', '--quiet', help="minimalistic console output.", action="store_true")
-parser.add_argument('-GT_PATH',type	=str)
-parser.add_argument('-DR_PATH',type	=str)
-parser.add_argument('-IMG_PATH',type = str)
-
-# argparse receiving list of classes to be ignored (e.g., python main.py --ignore person book)
+# argparse receiving list of classes to be ignored
 parser.add_argument('-i', '--ignore', nargs='+', type=str, help="ignore a list of classes.")
 # argparse receiving list of classes with specific IoU (e.g., python main.py --set-class-iou person 0.7)
 parser.add_argument('--set-class-iou', nargs='+', type=str, help="set IoU for a specific class.")
+
+parser.add_argument('-pltshow',type=str)
+
 args = parser.parse_args()
 
 '''
@@ -47,11 +56,12 @@ if args.set_class_iou is not None:
 
 # make sure that the cwd() is the location of the python script (so that every path makes sense)
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
-GT_PATH  = args.GT_PATH #'./content/test/labels' #os.path.join(os.getcwd(), 'content', 'test','labels')
-DR_PATH  = args.DR_PATH #'./content/ScaledYOLOv4/inference/output' #os.path.join(os.getcwd(), 'content', 'ScaledYOLOv4','inference','output')
-IMG_PATH = args.IMG_PATH #'./content/ScaledYOLOv4/inference/output'#os.path.join(os.getcwd(), 'content', 'ScaledYOLOv4','inference','output')
-
+GT_PATHarray = []
+DR_PATHarray = []
+GT_PATH = os.path.join(os.getcwd(), 'input', 'ground-truth')
+DR_PATH = os.path.join(os.getcwd(), 'input', 'detection-results')
+# if there are no images then no animation can be shown
+IMG_PATH = os.path.join(os.getcwd(), 'input', 'images-optional')
 if os.path.exists(IMG_PATH): 
     for dirpath, dirnames, files in os.walk(IMG_PATH):
         if not files:
@@ -80,8 +90,88 @@ if not args.no_plot:
         print("\"matplotlib\" not found, please install it to get the resulting plots.")
         args.no_plot = True
 
+def plot_confusion_matrix2(cm,
+                          target_names,
+                          title='Confusion matrix',
+                          cmap=None,
+                          normalize=False):
+    """
+    given a sklearn confusion matrix (cm), make a nice plot
 
-def log_average_miss_rate(prec, rec, num_images):
+    Arguments
+    ---------
+    cm:           confusion matrix from sklearn.metrics.confusion_matrix
+
+    target_names: given classification classes such as [0, 1, 2]
+                  the class names, for example: ['high', 'medium', 'low']
+
+    title:        the text to display at the top of the matrix
+
+    cmap:         the gradient of the values displayed from matplotlib.pyplot.cm
+                  see http://matplotlib.org/examples/color/colormaps_reference.html
+                  plt.get_cmap('jet') or plt.cm.Blues
+
+    normalize:    If False, plot the raw numbers
+                  If True, plot the proportions
+
+    Usage
+    -----
+    plot_confusion_matrix(cm           = cm,                  # confusion matrix created by
+                                                              # sklearn.metrics.confusion_matrix
+                          normalize    = True,                # show proportions
+                          target_names = y_labels_vals,       # list of names of the classes
+                          title        = best_estimator_name) # title of graph
+
+    Citiation
+    ---------
+    http://scikit-learn.org/stable/auto_examples/model_selection/plot_confusion_matrix.html
+    
+    confusion_matrix
+
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import itertools
+
+    accuracy = np.trace(cm) / float(np.sum(cm))
+    misclass = 1 - accuracy
+
+    if cmap is None:
+        cmap = plt.get_cmap('Blues')
+
+    plt.figure(figsize=(8, 6))
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+
+    if target_names is not None:
+        tick_marks = np.arange(len(target_names))
+        plt.xticks(tick_marks, target_names, rotation=45)
+        plt.yticks(tick_marks, target_names)
+
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+
+    thresh = cm.max() / 1.5 if normalize else cm.max() / 2
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        if normalize:
+            plt.text(j, i, "{:0.4f}".format(cm[i, j]),
+                     horizontalalignment="center",
+                     color="white" if cm[i, j] > thresh else "black")
+        else:
+            plt.text(j, i, "{:,}".format(cm[i, j]),
+                     horizontalalignment="center",
+                     color="white" if cm[i, j] > thresh else "black")
+
+
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label\naccuracy={:0.4f}; misclass={:0.4f}'.format(accuracy, misclass))
+    #if args.pltshow == "On":
+    plt.show()
+    
+def log_average_miss_rate(precision, fp_cumsum, num_images):
     """
         log-average miss rate:
             Calculated by averaging miss rates at 9 evenly spaced FPPI points
@@ -99,14 +189,14 @@ def log_average_miss_rate(prec, rec, num_images):
     """
 
     # if there were no detections of that class
-    if prec.size == 0:
+    if precision.size == 0:
         lamr = 0
         mr = 1
         fppi = 0
         return lamr, mr, fppi
 
-    fppi = (1 - prec)
-    mr = (1 - rec)
+    fppi = fp_cumsum / float(num_images)
+    mr = (1 - precision)
 
     fppi_tmp = np.insert(fppi, 0, -1.0)
     mr_tmp = np.insert(mr, 0, 1.0)
@@ -249,16 +339,18 @@ def draw_plot_func(dictionary, n_classes, window_title, plot_title, x_label, out
     # unpacking the list of tuples into two lists
     sorted_keys, sorted_values = zip(*sorted_dic_by_value)
     # 
+    tick_font_size = 20
+
     if true_p_bar != "":
         """
          Special case to draw in:
             - green -> TP: True Positives (object detected and matches ground-truth)
             - red -> FP: False Positives (object detected but does not match ground-truth)
-            - pink -> FN: False Negatives (object not detected but present in the ground-truth)
+            - orange -> FN: False Negatives (object not detected but present in the ground-truth)
         """
         fp_sorted = []
         tp_sorted = []
-        for key in sorted_keys:
+        for key in sorted_keys:        
             fp_sorted.append(dictionary[key] - true_p_bar[key])
             tp_sorted.append(true_p_bar[key])
         plt.barh(range(n_classes), fp_sorted, align='center', color='crimson', label='False Positive')
@@ -283,7 +375,7 @@ def draw_plot_func(dictionary, n_classes, window_title, plot_title, x_label, out
             if i == (len(sorted_values)-1): # largest bar
                 adjust_axes(r, t, fig, axes)
     else:
-        plt.barh(range(n_classes), sorted_values, color=plot_color)
+        plt.barh(range(n_classes), sorted_values, color=plot_color, height = 0.4)
         """
          Write number on side of bar
         """
@@ -294,15 +386,16 @@ def draw_plot_func(dictionary, n_classes, window_title, plot_title, x_label, out
             str_val = " " + str(val) # add a space before
             if val < 1.0:
                 str_val = " {0:.2f}".format(val)
-            t = plt.text(val, i, str_val, color=plot_color, va='center', fontweight='bold')
+            t = plt.text(val, i, str_val, color=plot_color, va='center', fontweight='bold', fontsize=16)
             # re-set axes to show number inside the figure
             if i == (len(sorted_values)-1): # largest bar
                 adjust_axes(r, t, fig, axes)
     # set window title
     fig.canvas.set_window_title(window_title)
     # write classes in y axis
-    tick_font_size = 12
     plt.yticks(range(n_classes), sorted_keys, fontsize=tick_font_size)
+    plt.xticks(np.arange(0, 1.1, 0.2), fontsize=16)
+
     """
      Re-scale height accordingly
     """
@@ -318,9 +411,13 @@ def draw_plot_func(dictionary, n_classes, window_title, plot_title, x_label, out
     # set new height
     if figure_height > init_height:
         fig.set_figheight(figure_height)
+    fig.set_figheight(figure_height*2.5)
+    # print(figure_height)
+    # print(init_height)
+    # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
     # set plot title
-    plt.title(plot_title, fontsize=14)
+    plt.title(plot_title, fontsize=24)
     # set axis titles
     # plt.xlabel('classes')
     plt.xlabel(x_label, fontsize='large')
@@ -329,27 +426,27 @@ def draw_plot_func(dictionary, n_classes, window_title, plot_title, x_label, out
     # save the plot
     fig.savefig(output_path)
     # show image
-    # if to_show:
-    #     plt.show()
-    # # close the plot
-    # plt.close()
+    if to_show:
+        plt.show()
+    # close the plot
+    plt.close()
 
 """
- Create a ".temp_files/" and "output/" directory
+ Create a ".temp_files/" and "results/" directory
 """
 TEMP_FILES_PATH = ".temp_files"
 if not os.path.exists(TEMP_FILES_PATH): # if it doesn't exist already
     os.makedirs(TEMP_FILES_PATH)
-output_files_path = "output"
-if os.path.exists(output_files_path): # if it exist already
-    # reset the output directory
-    shutil.rmtree(output_files_path)
+results_files_path =  os.path.join(os.getcwd(),"results/")
+if os.path.exists(results_files_path): # if it exist already
+    # reset the results directory
+    shutil.rmtree(results_files_path)
 
-os.makedirs(output_files_path)
+os.makedirs(results_files_path)
 if draw_plot:
-    os.makedirs(os.path.join(output_files_path, "classes"))
+    os.makedirs(os.path.join(results_files_path, "classes"))
 if show_animation:
-    os.makedirs(os.path.join(output_files_path, "images", "detections_one_by_one"))
+    os.makedirs(os.path.join(results_files_path, "images", "detections_one_by_one"))
 
 """
  ground-truth
@@ -365,14 +462,19 @@ ground_truth_files_list.sort()
 gt_counter_per_class = {}
 counter_images_per_class = {}
 
-gt_files = []
 for txt_file in ground_truth_files_list:
-    #print(txt_file)
+
+    if ".gitignore"  in txt_file :
+        continue;
+
+    if "FPS.txt"  in txt_file:
+        continue;
     file_id = txt_file.split(".txt", 1)[0]
     file_id = os.path.basename(os.path.normpath(file_id))
     # check if there is a correspondent detection-results file
     temp_path = os.path.join(DR_PATH, (file_id + ".txt"))
     if not os.path.exists(temp_path):
+        continue;
         error_msg = "Error. File not found: {}\n".format(temp_path)
         error_msg += "(You can avoid this error message by running extra/intersect-gt-and-dr.py)"
         error(error_msg)
@@ -400,30 +502,28 @@ for txt_file in ground_truth_files_list:
             continue
         bbox = left + " " + top + " " + right + " " +bottom
         if is_difficult:
-            bounding_boxes.append({"class_name":class_name, "bbox":bbox, "used":False, "difficult":True})
-            is_difficult = False
+                bounding_boxes.append({"class_name":class_name, "bbox":bbox, "used":False, "difficult":True})
+                is_difficult = False
         else:
-            bounding_boxes.append({"class_name":class_name, "bbox":bbox, "used":False})
-            # count that object
-            if class_name in gt_counter_per_class:
-                gt_counter_per_class[class_name] += 1
-            else:
-                # if class didn't exist yet
-                gt_counter_per_class[class_name] = 1
-
-            if class_name not in already_seen_classes:
-                if class_name in counter_images_per_class:
-                    counter_images_per_class[class_name] += 1
+                bounding_boxes.append({"class_name":class_name, "bbox":bbox, "used":False})
+                # count that object
+                if class_name in gt_counter_per_class:
+                    gt_counter_per_class[class_name] += 1
                 else:
                     # if class didn't exist yet
-                    counter_images_per_class[class_name] = 1
-                already_seen_classes.append(class_name)
+                    gt_counter_per_class[class_name] = 1
 
+                if class_name not in already_seen_classes:
+                    if class_name in counter_images_per_class:
+                        counter_images_per_class[class_name] += 1
+                    else:
+                        # if class didn't exist yet
+                        counter_images_per_class[class_name] = 1
+                    already_seen_classes.append(class_name)
+    GT_PATHarray.append(class_name)
 
     # dump bounding_boxes into a ".json" file
-    new_temp_file = TEMP_FILES_PATH + "/" + file_id + "_ground_truth.json"
-    gt_files.append(new_temp_file)
-    with open(new_temp_file, 'w') as outfile:
+    with open(TEMP_FILES_PATH + "/" + file_id + "_ground_truth.json", 'w') as outfile:
         json.dump(bounding_boxes, outfile)
 
 gt_classes = list(gt_counter_per_class.keys())
@@ -468,6 +568,10 @@ dr_files_list.sort()
 for class_index, class_name in enumerate(gt_classes):
     bounding_boxes = []
     for txt_file in dr_files_list:
+        if ".gitignore"  in txt_file :
+            continue;
+        if "FPS.txt"  in txt_file:
+            continue;
         #print(txt_file)
         # the first time it checks if all the corresponding ground-truth files exist
         file_id = txt_file.split(".txt",1)[0]
@@ -481,35 +585,75 @@ for class_index, class_name in enumerate(gt_classes):
         lines = file_lines_to_list(txt_file)
         for line in lines:
             try:
-                # tmp_class_name, confidence, left, top, right, bottom = line.split()
-                tmp_class_name, left, top, right, bottom = line.split()
+                tmp_class_name, confidence, left, top, right, bottom = line.split()
             except ValueError:
                 error_msg = "Error: File " + txt_file + " in the wrong format.\n"
-                # error_msg += " Expected: <class_name> <confidence> <left> <top> <right> <bottom>\n"
-                error_msg += " Expected: <class_name> <left> <top> <right> <bottom>\n"
+                error_msg += " Expected: <class_name> <confidence> <left> <top> <right> <bottom>\n"
                 error_msg += " Received: " + line
                 error(error_msg)
             if tmp_class_name == class_name:
                 #print("match")
                 bbox = left + " " + top + " " + right + " " +bottom
-                bounding_boxes.append({"file_id":file_id, "bbox":bbox})
-                # bounding_boxes.append({"confidence":confidence, "file_id":file_id, "bbox":bbox})
-                #print(bounding_boxes)
+                bounding_boxes.append({"confidence":confidence, "file_id":file_id, "bbox":bbox})
+            #print(bounding_boxes)
     # sort detection-results by decreasing confidence
-    # bounding_boxes.sort(key=lambda x:float(x['confidence']), reverse=True)
-
+    bounding_boxes.sort(key=lambda x:float(x['confidence']), reverse=True)
     with open(TEMP_FILES_PATH + "/" + class_name + "_dr.json", 'w') as outfile:
         json.dump(bounding_boxes, outfile)
 
+for txt_file in dr_files_list:
+    
+    if ".gitignore"  in txt_file :
+        continue;
+    if "FPS.txt"  in txt_file:
+        continue;
+    lines_list = file_lines_to_list(txt_file)
+    for line in lines_list:
+        class_name, left, top, right, bottom, _difficult = line.split()
+        # if class_name != "Normal":
+        DR_PATHarray.append(class_name)
+        break;
+    if len(lines_list) == 0 :
+        DR_PATHarray.append('Normal')
+
+label = np.asarray(GT_PATHarray)
+pred = np.asarray(DR_PATHarray)
+cnf_matrix = confusion_matrix(label, pred)
+print(pred)
+from sklearn.metrics import precision_recall_fscore_support as score
+precision, recall, fscore, support = score(label, pred)
+
+Tstr = ""
+Tstr +='precision: {}'.format(precision)+'\n'
+Tstr +='recall: {}'.format(recall)+'\n'
+Tstr +='fscore: {}'.format(fscore)+'\n'
+Tstr +='support: {}'.format(support)+'\n'
+
+Tstr +='precision Average : {}'.format(np.sum(precision)/(len(precision)-1))+'\n'
+Tstr +='recall Average : {}'.format(np.sum(recall)/(len(recall)-1))+'\n'
+Tstr +='fscore Average : {}'.format(np.sum(fscore)/(len(fscore)-1))
+
+with open(results_files_path + "/precision_recall_fscore_support.txt", 'w') as temp_file:
+    temp_file.write(Tstr)
+
+from sklearn.metrics import precision_score
+precision_score(label, pred, average="macro") 
+#plot_confusion_matrix2(cm = cnf_matrix , target_names=["Normal", "VSDType1", "VSDType2", "VSDType4","ASDType2","XiphoidLongAxis","ParasternalShortAxis","XiphoidShortAxis"],normalize=True)
+# plot_confusion_matrix2(cm = cnf_matrix , target_names=["Normal", "VSDType2", "VSDType1", "VSDType4"],normalize=True)
+import scikitplot as skplt
+skplt.metrics.plot_confusion_matrix(label, pred, normalize=False)
+if args.pltshow == "On":
+    plt.show()
 """
  Calculate the AP for each class
 """
 sum_AP = 0.0
 ap_dictionary = {}
 lamr_dictionary = {}
-# open file to store the output
-with open(output_files_path + "/output.txt", 'w') as output_file:
-    output_file.write("# AP and precision/recall per class\n")
+# open file to store the results
+with open(results_files_path + "/results.txt", 'w') as results_file:
+    tStart = time.time()#計時開始
+    results_file.write("# AP and precision/recall per class\n")
     count_true_positives = {}
     for class_index, class_name in enumerate(gt_classes):
         count_true_positives[class_name] = 0
@@ -529,19 +673,19 @@ with open(output_files_path + "/output.txt", 'w') as output_file:
             file_id = detection["file_id"]
             if show_animation:
                 # find ground truth image
-                ground_truth_img = glob.glob1(IMG_PATH, file_id + ".jpg")
-                print(IMG_PATH,file_id)
+                ground_truth_img = glob.glob1(IMG_PATH, file_id + ".*")
                 #tifCounter = len(glob.glob1(myPath,"*.tif"))
                 if len(ground_truth_img) == 0:
                     error("Error. Image not found with id: " + file_id)
                 elif len(ground_truth_img) > 1:
+                    print(dr_file)
                     error("Error. Multiple image with id: " + file_id)
                 else: # found image
                     #print(IMG_PATH + "/" + ground_truth_img[0])
                     # Load image
                     img = cv2.imread(IMG_PATH + "/" + ground_truth_img[0])
                     # load image with draws of multiple detections
-                    img_cumulative_path = output_files_path + "/images/" + ground_truth_img[0]
+                    img_cumulative_path = results_files_path + "/images/" + ground_truth_img[0]
                     if os.path.isfile(img_cumulative_path):
                         img_cumulative = cv2.imread(img_cumulative_path)
                     else:
@@ -634,8 +778,7 @@ with open(output_files_path + "/output.txt", 'w') as output_file:
                 # 2nd line
                 v_pos += int(bottom_border / 2.0)
                 rank_pos = str(idx+1) # rank position (idx starts at 0)
-                # text = "Detection #rank: " + rank_pos + " confidence: {0:.2f}% ".format(float(detection["confidence"])*100)
-                text = "Detection #rank: " + rank_pos 
+                text = "Detection #rank: " + rank_pos + " confidence: {0:.2f}% ".format(float(detection["confidence"])*100)
                 img, line_width = draw_text_in_image(img, text, (margin, v_pos), white, 0)
                 color = light_red
                 if status == "MATCH!":
@@ -654,13 +797,14 @@ with open(output_files_path + "/output.txt", 'w') as output_file:
                 cv2.rectangle(img_cumulative,(bb[0],bb[1]),(bb[2],bb[3]),color,2)
                 cv2.putText(img_cumulative, class_name, (bb[0],bb[1] - 5), font, 0.6, color, 1, cv2.LINE_AA)
                 # show image
-                # cv2.imshow("Animation", img)
-                # cv2.waitKey(20) # show for 20 ms
-                # save image to output
-                output_img_path = output_files_path + "/images/detections_one_by_one/" + class_name + "_detection" + str(idx) + ".jpg"
+                cv2.imshow("Animation", img)
+                cv2.waitKey(20) # show for 20 ms
+                # save image to results
+                output_img_path = results_files_path + "/images/detections_one_by_one/" + class_name + "_detection" + str(idx) + ".jpg"
                 cv2.imwrite(output_img_path, img)
                 # save the image with all the objects drawn to it
-                cv2.imwrite(img_cumulative_path, img_cumulative)
+                # if class_name == "VSDType4":
+                #     cv2.imwrite(img_cumulative_path, img_cumulative)
 
         #print(tp)
         # compute precision/recall
@@ -686,17 +830,34 @@ with open(output_files_path + "/output.txt", 'w') as output_file:
         sum_AP += ap
         text = "{0:.2f}%".format(ap*100) + " = " + class_name + " AP " #class_name + " AP = {0:.2f}%".format(ap*100)
         """
-         Write to output.txt
+         Write to results.txt
         """
+        # sum_prec = 0 
+        # sum_rec  = 0
+        # for elem in prec :
+        #     sum_prec = sum_prec + elem
+        # for elem in rec :
+        #     sum_rec = sum_rec + elem
+        # print("prec value:",prec)
+        # sum_prec = sum_prec/len(prec)
+        # sum_rec  = sum_rec/len(prec)
+
+        # precision_average =  precision_average + sum_prec
+        # recall_average    =  recall_average + sum_rec 
+
         rounded_prec = [ '%.2f' % elem for elem in prec ]
+        #print(rounded_prec)
         rounded_rec = [ '%.2f' % elem for elem in rec ]
-        output_file.write(text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) + "\n\n")
+
+        #results_file.write(text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) + "\n"+"sum_prec = "+str(sum_prec)+"\n\n")
+        results_file.write(text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) +"\n\n")
+
         if not args.quiet:
             print(text)
         ap_dictionary[class_name] = ap
 
         n_images = counter_images_per_class[class_name]
-        lamr, mr, fppi = log_average_miss_rate(np.array(prec), np.array(rec), n_images)
+        lamr, mr, fppi = log_average_miss_rate(np.array(rec), np.array(fp), n_images)
         lamr_dictionary[class_name] = lamr
 
         """
@@ -727,40 +888,25 @@ with open(output_files_path + "/output.txt", 'w') as output_file:
             # Alternative option -> normal display
             #plt.show()
             # save the plot
-            fig.savefig(output_files_path + "/classes/" + class_name + ".png")
+            fig.savefig(results_files_path + "/classes/" + class_name + ".png")
             plt.cla() # clear axes for next plot
+    tEnd = time.time()#計時結束
 
     if show_animation:
         cv2.destroyAllWindows()
 
-    output_file.write("\n# mAP of all classes\n")
+    results_file.write("\n# mAP of all classes\n")
     mAP = sum_AP / n_classes
-    text = "mAP = {0:.2f}%".format(mAP*100)
-    output_file.write(text + "\n")
+    text = "mAP = {0:.2f}%".format(mAP*100)+"\n"
+    # text = text + "precision = {0:.2f}%".format(precision_average/n_classes*100)+"\n"
+    # text = text + "recall    = {0:.2f}%".format(recall_average/n_classes*100)
+
+    results_file.write(text + "\n")
+
     print(text)
 
-"""
- Draw false negatives
-"""
-if show_animation:
-    pink = (203,192,255)
-    for tmp_file in gt_files:
-        ground_truth_data = json.load(open(tmp_file))
-        #print(ground_truth_data)
-        # get name of corresponding image
-        start = TEMP_FILES_PATH + '/'
-        img_id = tmp_file[tmp_file.find(start)+len(start):tmp_file.rfind('_ground_truth.json')]
-        img_cumulative_path = output_files_path + "/images/" + img_id + ".jpg"
-        img = cv2.imread(img_cumulative_path)
-        if img is None:
-            img_path = IMG_PATH + '/' + img_id + ".jpg"
-            img = cv2.imread(img_path)
-        # draw false negatives
-        for obj in ground_truth_data:
-            if not obj['used']:
-                bbgt = [ int(round(float(x))) for x in obj["bbox"].split() ]
-                cv2.rectangle(img,(bbgt[0],bbgt[1]),(bbgt[2],bbgt[3]),pink,2)
-        cv2.imwrite(img_cumulative_path, img)
+# with open(results_files_path + "/FPS.txt", 'w') as temp_file:
+#     temp_file.write("It cost %f /S" % (147/(tEnd - tStart)))
 
 # remove the temp_files directory
 shutil.rmtree(TEMP_FILES_PATH)
@@ -796,7 +942,7 @@ if draw_plot:
     plot_title = "ground-truth\n"
     plot_title += "(" + str(len(ground_truth_files_list)) + " files and " + str(n_classes) + " classes)"
     x_label = "Number of objects per class"
-    output_path = output_files_path + "/ground-truth-info.png"
+    output_path = results_files_path + "/ground-truth-info.png"
     to_show = False
     plot_color = 'forestgreen'
     draw_plot_func(
@@ -814,10 +960,10 @@ if draw_plot:
 """
  Write number of ground-truth objects per class to results.txt
 """
-with open(output_files_path + "/output.txt", 'a') as output_file:
-    output_file.write("\n# Number of ground-truth objects per class\n")
+with open(results_files_path + "/results.txt", 'a') as results_file:
+    results_file.write("\n# Number of ground-truth objects per class\n")
     for class_name in sorted(gt_counter_per_class):
-        output_file.write(class_name + ": " + str(gt_counter_per_class[class_name]) + "\n")
+        results_file.write(class_name + ": " + str(gt_counter_per_class[class_name]) + "\n")
 
 """
  Finish counting true positives
@@ -840,7 +986,7 @@ if draw_plot:
     plot_title += str(count_non_zero_values_in_dictionary) + " detected classes)"
     # end Plot title
     x_label = "Number of objects per class"
-    output_path = output_files_path + "/detection-results-info.png"
+    output_path = results_files_path + "/detection-results-info.png"
     to_show = False
     plot_color = 'forestgreen'
     true_p_bar = count_true_positives
@@ -857,16 +1003,16 @@ if draw_plot:
         )
 
 """
- Write number of detected objects per class to output.txt
+ Write number of detected objects per class to results.txt
 """
-with open(output_files_path + "/output.txt", 'a') as output_file:
-    output_file.write("\n# Number of detected objects per class\n")
+with open(results_files_path + "/results.txt", 'a') as results_file:
+    results_file.write("\n# Number of detected objects per class\n")
     for class_name in sorted(dr_classes):
         n_det = det_counter_per_class[class_name]
         text = class_name + ": " + str(n_det)
         text += " (tp:" + str(count_true_positives[class_name]) + ""
         text += ", fp:" + str(n_det - count_true_positives[class_name]) + ")\n"
-        output_file.write(text)
+        results_file.write(text)
 
 """
  Draw log-average miss rate plot (Show lamr of all classes in decreasing order)
@@ -875,7 +1021,7 @@ if draw_plot:
     window_title = "lamr"
     plot_title = "log-average miss rate"
     x_label = "log-average miss rate"
-    output_path = output_files_path + "/lamr.png"
+    output_path = results_files_path + "/lamr.png"
     to_show = False
     plot_color = 'royalblue'
     draw_plot_func(
@@ -897,8 +1043,8 @@ if draw_plot:
     window_title = "mAP"
     plot_title = "mAP = {0:.2f}%".format(mAP*100)
     x_label = "Average Precision"
-    output_path = output_files_path + "/mAP.png"
-    to_show = True
+    output_path = results_files_path + "/mAP.png"
+    to_show = False
     plot_color = 'royalblue'
     draw_plot_func(
         ap_dictionary,
