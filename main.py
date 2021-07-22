@@ -642,8 +642,8 @@ precision_score(label, pred, average="macro")
 # plot_confusion_matrix2(cm = cnf_matrix , target_names=["Normal", "VSDType2", "VSDType1", "VSDType4"],normalize=True)
 import scikitplot as skplt
 skplt.metrics.plot_confusion_matrix(label, pred, normalize=False)
-if args.pltshow == "On":
-    plt.show()
+#if args.pltshow == "On":
+plt.show()
 """
  Calculate the AP for each class
 """
