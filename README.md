@@ -4,7 +4,7 @@
 !pip install scikit-plot
 %cd mAP
 # 上傳原始標記至input/ground-truth，預測結果至input/detection-results , 預測圖片至input/images-optional
-!python main.py 
+!python main.py --no-animation
 ```
 
 # 指令說明
