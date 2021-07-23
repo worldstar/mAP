@@ -1,6 +1,7 @@
 # 在Google Colab上運行mAP使用說明
 ```
-!git clone https://github.com/Cartucho/mAP
+!git clone https://github.com/worldstar/mAP
+!pip install scikit-plot
 %cd mAP
 # 上傳原始標記至input/ground-truth，預測結果至input/detection-results , 預測圖片至input/images-optional
 !python main.py 
