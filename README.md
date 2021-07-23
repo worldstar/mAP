@@ -10,7 +10,6 @@
 # 指令說明
 ```
 --no-animation --> 計算時關閉動畫功能，在Google Colab上務必使用此參數
---no-plot      --> 不產生classes資料夾、detection-results-info.png、ground-truth-info.png、lamr.png、mAP.png 
 ```
 # 參數說明
 ```
